@@ -1,5 +1,7 @@
 package io.github.thebusybiscuit.slimefun4.implementation.tasks;
 
+import java.util.logging.Level;
+
 import javax.annotation.Nonnull;
 
 import org.apache.commons.lang.Validate;
@@ -10,6 +12,7 @@ import org.bukkit.block.Block;
 
 import io.github.bakedlibs.dough.skins.PlayerHead;
 import io.github.bakedlibs.dough.skins.PlayerSkin;
+import io.github.thebusybiscuit.slimefun4.implementation.Slimefun;
 import io.github.thebusybiscuit.slimefun4.implementation.items.electric.Capacitor;
 import io.github.thebusybiscuit.slimefun4.utils.HeadTexture;
 import io.papermc.lib.PaperLib;
@@ -22,6 +25,17 @@ import io.papermc.lib.PaperLib;
  *
  */
 public class CapacitorTextureUpdateTask implements Runnable {
+
+    /**
+     * Tracks whether skin setting is available on this platform.
+     * Set to false if an UnsupportedOperationException is caught.
+     */
+    private static volatile boolean skinSettingAvailable = true;
+
+    /**
+     * Tracks whether we've already logged a warning about skin setting being unavailable.
+     */
+    private static volatile boolean warningLogged = false;
 
     /**
      * The {@link Location} of the {@link Capacitor}.
@@ -53,6 +67,11 @@ public class CapacitorTextureUpdateTask implements Runnable {
 
     @Override
     public void run() {
+        // Skip texture updates if skin setting is not available on this platform
+        if (!skinSettingAvailable) {
+            return;
+        }
+
         Block b = l.getBlock();
         Material type = b.getType();
 
@@ -75,10 +94,26 @@ public class CapacitorTextureUpdateTask implements Runnable {
     }
 
     private void setTexture(@Nonnull Block b, @Nonnull HeadTexture texture) {
-        PlayerSkin skin = PlayerSkin.fromHashCode(texture.getUniqueId(), texture.getTexture());
-        PlayerHead.setSkin(b, skin, false);
+        try {
+            PlayerSkin skin = PlayerSkin.fromHashCode(texture.getUniqueId(), texture.getTexture());
+            PlayerHead.setSkin(b, skin, false);
 
-        PaperLib.getBlockState(b, false).getState().update(true, false);
+            PaperLib.getBlockState(b, false).getState().update(true, false);
+        } catch (UnsupportedOperationException e) {
+            // No compatible skin adapter on this platform/version
+            // Disable future texture updates to avoid repeated exceptions
+            skinSettingAvailable = false;
+
+            // Log a one-time warning to inform server admins
+            if (!warningLogged) {
+                warningLogged = true;
+                try {
+                    Slimefun.logger().log(Level.WARNING, "Capacitor texture updates are disabled: No compatible skin adapter found for this server version. Capacitor functionality is unaffected, but textures will not update.");
+                } catch (IllegalStateException ignored) {
+                    // Slimefun instance not available, skip logging
+                }
+            }
+        }
     }
 
 }
